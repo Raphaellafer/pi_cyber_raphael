@@ -1,0 +1,24 @@
+{
+  "manifest_version": 2,
+  "name": "Análise de Raphael",
+  "version": "0.1.0",
+  "description": "Observa terceiros, cookies recebidos e storage HTML5 por aba.",
+  "permissions": ["webRequest", "webRequestBlocking", "cookies", "tabs", "storage", "webNavigation", "<all_urls>"],
+  "background": {
+    "scripts": ["lib/domains.js", "background.js"]
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_start",
+    "all_frames": true,
+    "match_about_blank": true
+  }],
+  "browser_action": {
+    "default_title": "Análise de Raphael",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/icon-48.png"
+  },
+  "icons": {"48": "icons/icon-48.png"},
+  "content_security_policy": "script-src 'self'; object-src 'none'"
+}

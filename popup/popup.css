@@ -1,0 +1,37 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 13px; background: #f4f7fb; color: #18263b; }
+* { box-sizing: border-box; }
+body { width: 580px; max-width: 100%; margin: 0; padding: 18px; }
+header { display: flex; gap: 10px; align-items: center; }
+h1 { margin: 0; font-size: 21px; }
+h2 { font-size: 16px; margin: 0 0 10px; }
+p { margin: 6px 0; line-height: 1.5; }
+header p, section > p, footer { color: #526178; }
+.page { overflow-wrap: anywhere; margin: 14px 0; font-weight: 600; }
+#status:empty { display: none; }
+#status { padding: 8px; border-left: 3px solid #c18412; }
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+.summary div { background: #e3edf7; padding: 12px; border-radius: 8px; }
+.summary strong { display: block; font-size: 26px; color: #125e73; }
+.summary span { font-size: 11px; }
+section { background: #fff; border: 1px solid #d9e2ec; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12px; }
+th, td { padding: 8px 5px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid #d9e2ec; }
+#third-table th:first-child { width: 57%; }
+th { font-weight: 600; }
+td small { display: block; margin-top: 4px; color: #526178; }
+.tracker { color: #96301d; font-weight: 600; }
+.frame { margin-top: 14px; }
+.frame h3 { font-size: 12px; overflow-wrap: anywhere; }
+.frame p { font-size: 11px; }
+footer { display: flex; gap: 12px; align-items: center; font-size: 11px; line-height: 1.5; }
+button { border: 0; border-radius: 5px; background: #125e73; color: #fff; padding: 8px 12px; cursor: pointer; }
+button:focus-visible { outline: 3px solid #c18412; outline-offset: 3px; }
+@media (prefers-color-scheme: dark) {
+  :root { background: #101b29; color: #e2eaf3; }
+  section { background: #182638; border-color: #35445a; }
+  .summary div { background: #20364b; }
+  .summary strong { color: #86d9de; }
+  header p, section > p, footer, td small { color: #b0bfd2; }
+  th, td { border-color: #35445a; }
+  .tracker { color: #ffb3a3; }
+}

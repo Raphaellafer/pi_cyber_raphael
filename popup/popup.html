@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Análise de Raphael</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <header><img src="../icons/icon-48.png" width="32" height="32" alt=""><div><h1>Análise de Raphael</h1><p>Observação de privacidade · Conceito C</p></div></header>
+  <p id="page" class="page">Carregando aba…</p>
+  <p id="status" role="status"></p>
+  <div class="summary">
+    <div><strong id="third-count">0</strong><span>domínios terceiros</span></div>
+    <div><strong id="tracker-count">0</strong><span>rastreadores conhecidos</span></div>
+    <div><strong id="cookie-count">0</strong><span>cookies via Set-Cookie</span></div>
+  </div>
+  <section aria-labelledby="third-title">
+    <h2 id="third-title">Terceiros</h2>
+    <p id="third-empty">Nenhuma requisição de terceiro observada.</p>
+    <table id="third-table" hidden><thead><tr><th>Domínio / tipos</th><th>Requisições</th><th>Rastreador</th></tr></thead><tbody id="third-body"></tbody></table>
+  </section>
+  <section aria-labelledby="storage-title">
+    <h2 id="storage-title">Storage HTML5</h2>
+    <p>Itens e bancos por frame no load e 3 s depois. “—” significa indisponível ou não suportado.</p>
+    <p id="storage-empty">Aguardando medições. Recarregue a página e espere 3 segundos.</p>
+    <div id="storage-frames"></div>
+  </section>
+  <footer>Headers recebidos não garantem cookies aceitos. Dados apenas nesta sessão.<button id="refresh" type="button">Atualizar</button></footer>
+</body>
+</html>
