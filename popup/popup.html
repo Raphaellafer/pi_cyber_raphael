@@ -8,18 +8,29 @@
   <script src="popup.js" defer></script>
 </head>
 <body>
-  <header><img src="../icons/icon-48.png" width="32" height="32" alt=""><div><h1>Análise de Raphael</h1><p>Observação de privacidade · Conceito C</p></div></header>
+  <header><img src="../icons/icon-48.png" width="32" height="32" alt=""><div><h1>Análise de Raphael</h1><p>Observação de privacidade · Conceito B</p></div></header>
   <p id="page" class="page">Carregando aba…</p>
   <p id="status" role="status"></p>
   <div class="summary">
     <div><strong id="third-count">0</strong><span>domínios terceiros</span></div>
     <div><strong id="tracker-count">0</strong><span>rastreadores conhecidos</span></div>
-    <div><strong id="cookie-count">0</strong><span>cookies via Set-Cookie</span></div>
+    <div><strong id="cookie-count">0</strong><span>cookies observados</span></div>
   </div>
   <section aria-labelledby="third-title">
     <h2 id="third-title">Terceiros</h2>
     <p id="third-empty">Nenhuma requisição de terceiro observada.</p>
     <table id="third-table" hidden><thead><tr><th>Domínio / tipos</th><th>Requisições</th><th>Rastreador</th></tr></thead><tbody id="third-body"></tbody></table>
+  </section>
+  <section aria-labelledby="cookie-title">
+    <h2 id="cookie-title">Cookies</h2>
+    <div class="cookie-summary">
+      <div><strong id="first-session">0</strong><span>1ª sessão</span></div>
+      <div><strong id="first-persistent">0</strong><span>1ª persistente</span></div>
+      <div><strong id="third-session">0</strong><span>3ª sessão</span></div>
+      <div><strong id="third-persistent">0</strong><span>3ª persistente</span></div>
+    </div>
+    <p id="cookie-empty">Nenhum cookie observado.</p>
+    <table id="cookie-table" hidden><thead><tr><th>Nome</th><th>Domínio</th><th>Parte</th><th>Tipo</th><th>Origem</th></tr></thead><tbody id="cookie-body"></tbody></table>
   </section>
   <section aria-labelledby="storage-title">
     <h2 id="storage-title">Storage HTML5</h2>
@@ -27,6 +38,13 @@
     <p id="storage-empty">Aguardando medições. Recarregue a página e espere 3 segundos.</p>
     <div id="storage-frames"></div>
   </section>
-  <footer>Headers recebidos não garantem cookies aceitos. Dados apenas nesta sessão.<button id="refresh" type="button">Atualizar</button></footer>
+  <section aria-labelledby="alert-title">
+    <h2 id="alert-title">Alertas</h2>
+    <div class="alert-group"><h3>Canvas fingerprint</h3><ul id="canvas-alerts"></ul></div>
+    <div class="alert-group"><h3>Bounce tracking</h3><ul id="bounce-alerts"></ul></div>
+    <div class="alert-group"><h3>Cookie sync</h3><ul id="sync-alerts"></ul></div>
+    <div class="alert-group"><h3>Parâmetros de rastreio</h3><ul id="parameter-alerts"></ul></div>
+  </section>
+  <footer>Cookies via header podem ser rejeitados pelo navegador. Valores nunca aparecem no popup.<button id="refresh" type="button">Atualizar</button></footer>
 </body>
 </html>

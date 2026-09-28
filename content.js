@@ -1,4 +1,4 @@
-/* Executado em cada frame; não injeta scripts e não lê valores armazenados. */
+/* Executado em cada frame; não injeta scripts nem expõe valores ao popup. */
 "use strict";
 
 (() => {
@@ -6,9 +6,18 @@
   let hooksAvailable = true;
   const registration = browser.runtime.sendMessage({ type: "registerFrame" }).catch(() => null);
 
-  function installIndexedDBHooks() {
+  async function sendFrameMessage(message) {
+    const documentRegistration = await registration;
+    if (!documentRegistration) return;
     try {
-      const page = window.wrappedJSObject;
+      await browser.runtime.sendMessage({ ...message, token: documentRegistration.token });
+    } catch {
+      // A extensão pode ser recarregada enquanto a página continua aberta.
+    }
+  }
+
+  function installIndexedDBHooks(page) {
+    try {
       const prototype = page.IDBFactory.prototype;
       for (const method of Object.keys(indexedDBCalls)) {
         const descriptor = Object.getOwnPropertyDescriptor(prototype, method);
@@ -20,6 +29,79 @@
         }, page);
         Object.defineProperty(prototype, method, { ...descriptor, value: wrapper });
       }
+    } catch {
+      hooksAvailable = false;
+    }
+  }
+
+  function scriptFromStack() {
+    const stack = String(new Error().stack || "");
+    const urls = stack.match(/(?:https?|file):\/\/[^\s)]+/g) || [];
+    for (const url of urls) {
+      const clean = url.replace(/:\d+:\d+$/, "");
+      if (!clean.startsWith("moz-extension://")) return clean;
+    }
+    return "Origem desconhecida";
+  }
+
+  function installMethodHook(page, prototype, method, api) {
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, method);
+    if (!descriptor || typeof descriptor.value !== "function") return;
+    const native = descriptor.value;
+    const wrapper = exportFunction(function (...args) {
+      const script = scriptFromStack();
+      const result = Reflect.apply(native, this, args);
+      void sendFrameMessage({ type: "canvasCall", api, script });
+      return result;
+    }, page);
+    Object.defineProperty(prototype, method, { ...descriptor, value: wrapper });
+  }
+
+  function installCanvasHooks(page) {
+    try {
+      installMethodHook(page, page.HTMLCanvasElement.prototype, "toDataURL", "toDataURL");
+      installMethodHook(page, page.HTMLCanvasElement.prototype, "toBlob", "toBlob");
+      installMethodHook(page, page.CanvasRenderingContext2D.prototype, "getImageData", "getImageData");
+      installMethodHook(page, page.CanvasRenderingContext2D.prototype, "fillText", "fillText");
+    } catch {
+      // Um construtor ausente neste frame não deve impedir as outras medições.
+    }
+  }
+
+  function findCookieDescriptor(page) {
+    let prototype = page.Document.prototype;
+    while (prototype) {
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, "cookie");
+      if (descriptor?.set) return { prototype, descriptor };
+      prototype = Object.getPrototypeOf(prototype);
+    }
+    return null;
+  }
+
+  function installCookieHook(page) {
+    try {
+      const found = findCookieDescriptor(page);
+      if (!found) return;
+      const nativeSetter = found.descriptor.set;
+      const setter = exportFunction(function (value) {
+        // Converte uma única vez, como faria o setter nativo de DOMString.
+        const serialized = String(value);
+        const result = Reflect.apply(nativeSetter, this, [serialized]);
+        void sendFrameMessage({ type: "jsCookie", cookie: serialized });
+        return result;
+      }, page);
+      Object.defineProperty(found.prototype, "cookie", { ...found.descriptor, set: setter });
+    } catch {
+      // Alguns documentos especiais não permitem alterar o descritor.
+    }
+  }
+
+  function installPageHooks() {
+    try {
+      const page = window.wrappedJSObject;
+      installIndexedDBHooks(page);
+      installCanvasHooks(page);
+      installCookieHook(page);
     } catch {
       hooksAvailable = false;
     }
@@ -60,13 +142,7 @@
       indexedDB: { calls: { ...indexedDBCalls }, hooksAvailable }
     };
     Object.assign(snapshot.indexedDB, await databaseCount());
-    const document = await registration;
-    if (!document) return;
-    try {
-      await browser.runtime.sendMessage({ type: "storageSnapshot", token: document.token, phase, snapshot });
-    } catch {
-      // A extensão pode ser recarregada enquanto a página continua aberta.
-    }
+    await sendFrameMessage({ type: "storageSnapshot", phase, snapshot });
   }
 
   function onLoad() {
@@ -74,7 +150,7 @@
     setTimeout(() => { void takeSnapshot("after3s"); }, 3000);
   }
 
-  installIndexedDBHooks();
+  installPageHooks();
   if (document.readyState === "complete") onLoad();
   else window.addEventListener("load", onLoad, { once: true });
 })();

@@ -1,18 +1,23 @@
 # Análise de Raphael
 
-Análise de Raphael é uma extensão experimental para Firefox criada para uma avaliação de Cibersegurança. Nesta primeira etapa, ela observa a atividade de privacidade da aba atual sem bloquear ou modificar requisições.
+Análise de Raphael é uma extensão experimental para Firefox criada para uma avaliação de Cibersegurança. Nesta segunda etapa, ela observa a atividade de privacidade da aba atual sem bloquear ou modificar requisições.
 
 ## Funcionalidades desta etapa
 
 - agrupa requisições de terceiros por domínio, quantidade e tipo;
 - compara o domínio base (eTLD+1) usando uma lista fixa de sufixos voltada aos sites brasileiros analisados;
 - identifica domínios presentes na lista pública Disconnect Tracking Protection;
-- conta headers `Set-Cookie` recebidos pela aba;
+- classifica cookies de primeira ou terceira parte e de sessão ou persistentes;
+- diferencia cookies recebidos em headers `Set-Cookie` daqueles criados por JavaScript;
 - mede itens de `localStorage` e `sessionStorage` no evento `load` e três segundos depois, em cada frame;
 - mede bancos IndexedDB quando `indexedDB.databases()` está disponível e observa chamadas a `open` e `deleteDatabase` desde `document_start`;
+- alerta sobre leitura de canvas depois de desenho com texto e informa o script de origem;
+- detecta domínios intermediários em redirects de servidor e de cliente, destacando os que enviaram cookies;
+- detecta possíveis cookie syncs quando valores de cookies aparecem em parâmetros enviados a outro domínio;
+- lista parâmetros de rastreio na navegação, como `utm_*`, `gclid`, `fbclid` e `msclkid`;
 - mostra o relatório no popup e o reinicia a cada navegação principal confirmada.
 
-O contador de cookies representa headers recebidos. Políticas do navegador podem rejeitar esses cookies, portanto o número não equivale necessariamente aos cookies gravados. A classificação detalhada de cookies pertence à próxima etapa.
+Cookies com origem `header` foram observados em uma resposta HTTP por meio de `Set-Cookie`; o navegador ainda pode rejeitá-los por suas políticas. Cookies com origem `js` foram observados no setter de `document.cookie`. Os valores são mantidos apenas na memória do background para detectar cookie sync e nunca são enviados ao popup.
 
 ## Instalação temporária
 
