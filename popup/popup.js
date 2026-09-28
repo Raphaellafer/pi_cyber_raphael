@@ -2,12 +2,27 @@
 "use strict";
 
 const element = id => document.getElementById(id);
+const domains = globalThis.PrivacyDomains;
+const privacyScore = globalThis.PrivacyScore;
+let blocklist = new Set();
+let lastSignature = "";
 
 function cell(row, value) {
   const result = document.createElement("td");
   result.textContent = String(value);
   row.append(result);
   return result;
+}
+
+async function saveBlocklist(next) {
+  await browser.storage.local.set({ blocklist: [...next].sort() });
+}
+
+async function toggleBlocked(baseDomain) {
+  const next = new Set(blocklist);
+  if (next.has(baseDomain)) next.delete(baseDomain);
+  else next.add(baseDomain);
+  await saveBlocklist(next);
 }
 
 function renderThirdParties(report, trackerStatus) {
@@ -26,12 +41,23 @@ function renderThirdParties(report, trackerStatus) {
     const domain = cell(row, entry.domain);
     const types = document.createElement("small");
     types.textContent = Object.entries(entry.types)
-      .map(([type, count]) => `${type}: ${count}`).join(" · ");
+      .map(([type, count]) => `${type}: ${count}`).join(" · ") +
+      (entry.blocked ? ` · bloqueadas: ${entry.blocked}` : "");
     domain.append(types);
     cell(row, entry.requests);
     const known = cell(row, trackerStatus === "ready"
       ? (entry.knownTracker ? "Sim" : "Não listado") : "—");
     if (entry.knownTracker) known.className = "tracker";
+    const action = document.createElement("td");
+    const button = document.createElement("button");
+    button.type = "button";
+    const listed = blocklist.has(entry.baseDomain);
+    button.textContent = listed ? "Desbloquear" : "Bloquear";
+    button.className = listed ? "secondary" : "";
+    button.title = entry.baseDomain;
+    button.addEventListener("click", () => { void toggleBlocked(entry.baseDomain); });
+    action.append(button);
+    row.append(action);
     body.append(row);
   }
 }
@@ -128,10 +154,66 @@ function renderAlerts(report) {
   const syncs = (report?.cookieSyncs || []).map(sync =>
     `${sync.de} → ${sync.para}, parâmetro ${sync.parametro}`);
   const parameters = (report?.trackingParameters || []).map(name => `Parâmetro ${name}`);
+  const hijack = privacyScore.hijackIndicators(report);
   renderAlertList("canvas-alerts", canvas);
   renderAlertList("bounce-alerts", bounces);
   renderAlertList("sync-alerts", syncs);
   renderAlertList("parameter-alerts", parameters);
+  renderAlertList("hijack-alerts", hijack);
+  const total = canvas.length + bounces.length + syncs.length + parameters.length + hijack.length;
+  element("alert-count").textContent = total ? `(${total})` : "";
+  const hooks = report?.frames?.[0]?.hooks;
+  element("globals-text").textContent = !hooks
+    ? "Aguardando inspeção (2 s após o load)."
+    : hooks.newGlobalsTotal === 0
+      ? "Nenhuma global nova."
+      : `${hooks.newGlobalsTotal} globais novas${hooks.newGlobalsTotal > hooks.newGlobals.length ? " (primeiras 50)" : ""}: ${hooks.newGlobals.join(", ")}`;
+}
+
+function renderScore(report) {
+  const body = element("score-body");
+  body.replaceChildren();
+  if (!report) {
+    element("score-summary").textContent = "—";
+    element("score-value").textContent = "—";
+    element("score-grade").textContent = "";
+    return;
+  }
+  const result = privacyScore.computeScore(report);
+  element("score-summary").textContent = `${result.score} ${result.nota}`;
+  element("score-value").textContent = result.score;
+  element("score-grade").textContent = `nota ${result.nota}`;
+  element("score-grade").dataset.grade = result.nota;
+  for (const criterio of result.criterios) {
+    const row = document.createElement("tr");
+    const label = cell(row, criterio.rotulo);
+    const why = document.createElement("small");
+    why.textContent = `${criterio.justificativa} Peso −${criterio.peso}, teto −${criterio.teto}.`;
+    label.append(why);
+    cell(row, criterio.ocorrencias);
+    cell(row, criterio.penalidade ? `−${criterio.penalidade}` : "0");
+    body.append(row);
+  }
+}
+
+function renderBlocklist(report) {
+  element("blocked-count").textContent = report?.blockedRequests || 0;
+  const items = [...blocklist].sort();
+  element("blocklist-empty").hidden = items.length > 0;
+  const list = element("blocklist-items");
+  list.replaceChildren();
+  for (const item of items) {
+    const entry = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = item;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary";
+    remove.textContent = "Remover";
+    remove.addEventListener("click", () => { void toggleBlocked(item); });
+    entry.append(name, remove);
+    list.append(entry);
+  }
 }
 
 async function refresh() {
@@ -140,6 +222,10 @@ async function refresh() {
     if (!tab) throw new Error("Aba indisponível");
     const result = await browser.runtime.sendMessage({ type: "getReport", tabId: tab.id });
     const { report, trackerStatus } = result;
+    // Redesenhar sem mudança recria os botões e pode engolir um clique.
+    const signature = JSON.stringify([report, trackerStatus, [...blocklist]]);
+    if (signature === lastSignature) return;
+    lastSignature = signature;
     element("page").textContent = report?.url || tab.url || "Aba atual";
     element("status").textContent = !report
       ? "Sem relatório. Abra um site HTTP(S) e recarregue a página."
@@ -150,12 +236,68 @@ async function refresh() {
     renderCookies(report);
     renderStorage(report);
     renderAlerts(report);
+    renderScore(report);
+    renderBlocklist(report);
   } catch {
     element("status").textContent = "Não foi possível consultar a aba. Reabra o popup ou recarregue a extensão.";
   }
 }
 
-element("refresh").addEventListener("click", refresh);
-void refresh();
+function selectTab(name) {
+  for (const button of document.querySelectorAll("[role=tab]")) {
+    const active = button.dataset.tab === name;
+    button.setAttribute("aria-selected", String(active));
+    element(`tab-${button.dataset.tab}`).hidden = !active;
+  }
+  try {
+    localStorage.setItem("activeTab", name);
+  } catch {
+    // Preferência opcional.
+  }
+}
+
+async function loadBlocklist() {
+  try {
+    const data = await browser.storage.local.get("blocklist");
+    blocklist = new Set(Array.isArray(data.blocklist) ? data.blocklist : []);
+  } catch {
+    blocklist = new Set();
+  }
+}
+
+element("blocklist-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const input = element("blocklist-input");
+  // Normaliza para o domínio base, a mesma regra usada no bloqueio.
+  const base = domains.baseDomain(input.value.trim());
+  if (!base || !base.includes(".")) {
+    element("blocklist-error").textContent = "Domínio inválido. Use algo como exemplo.com.";
+    return;
+  }
+  element("blocklist-error").textContent = "";
+  input.value = "";
+  const next = new Set(blocklist);
+  next.add(base);
+  await saveBlocklist(next);
+});
+
+for (const button of document.querySelectorAll("[role=tab]")) {
+  button.addEventListener("click", () => selectTab(button.dataset.tab));
+}
+try {
+  const saved = localStorage.getItem("activeTab");
+  if (saved && element(`tab-${saved}`)) selectTab(saved);
+} catch {
+  // Sem localStorage, começa na primeira aba.
+}
+
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.blocklist) return;
+  blocklist = new Set(Array.isArray(changes.blocklist.newValue) ? changes.blocklist.newValue : []);
+  void refresh();
+});
+
+element("refresh").addEventListener("click", () => { lastSignature = ""; void refresh(); });
+void loadBlocklist().then(refresh);
 // Atualiza quando a medição de +3 s chega com o popup aberto.
 setInterval(refresh, 1000);

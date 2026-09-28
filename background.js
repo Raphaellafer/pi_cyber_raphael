@@ -11,15 +11,24 @@ const privateReportState = new WeakMap();
 let trackerDomains = new Set();
 let trackerStatus = "loading";
 let generation = 0;
+// Domínios base da lista de bloqueio personalizada (browser.storage.local).
+let blocklist = new Set();
+
+// Polling: mesma URL de terceiro (sem query string) pedida várias vezes seguidas.
+const POLLING_TYPES = ["xmlhttprequest", "script", "beacon", "ping"];
+const POLLING_MIN_REQUESTS = 5;
+const POLLING_WINDOW_MS = 30000;
 
 function createReport(tabId, url) {
   const report = {
     tabId, url, generation: ++generation, startedAt: Date.now(),
     thirdParties: Object.create(null), cookies: [], frames: Object.create(null),
-    canvasFingerprints: [], bounces: [], cookieSyncs: [], trackingParameters: []
+    canvasFingerprints: [], bounces: [], cookieSyncs: [], trackingParameters: [],
+    hijack: { websockets: Object.create(null), polling: [], beef: [] },
+    blockedRequests: 0
   };
   // Valores de cookies nunca fazem parte do relatório devolvido ao popup.
-  privateReportState.set(report, { cookieSecrets: [], cookieSyncKeys: new Set() });
+  privateReportState.set(report, { cookieSecrets: [], cookieSyncKeys: new Set(), pollTimes: new Map() });
   return report;
 }
 
@@ -78,29 +87,93 @@ function detectCookieSync(report, requestUrl) {
   }
 }
 
+function updateBadge(tabId) {
+  const report = reports.get(tabId);
+  const count = report ? Object.values(report.thirdParties).filter(entry => entry.knownTracker).length : 0;
+  try {
+    Promise.resolve(browser.browserAction.setBadgeText({ tabId, text: count ? String(count) : "" }))
+      .catch(() => {});
+  } catch {
+    // A aba pode ter sido fechada.
+  }
+}
+
 function recordThirdParty(report, details) {
   if (!isThirdPartyRequest(report, details.url)) return;
   const host = domains.hostname(details.url);
-  const entry = report.thirdParties[host] ||= {
-    domain: host, baseDomain: domains.baseDomain(host), requests: 0,
-    types: Object.create(null), knownTracker: domains.isTracker(host, trackerDomains)
-  };
+  let entry = report.thirdParties[host];
+  if (!entry) {
+    entry = report.thirdParties[host] = {
+      domain: host, baseDomain: domains.baseDomain(host), requests: 0, blocked: 0,
+      types: Object.create(null), knownTracker: domains.isTracker(host, trackerDomains)
+    };
+    if (entry.knownTracker && reports.get(report.tabId) === report) updateBadge(report.tabId);
+  }
   entry.requests += 1;
   entry.types[details.type] = (entry.types[details.type] || 0) + 1;
   detectCookieSync(report, details.url);
 }
 
+function addUnique(list, value) {
+  if (!list.includes(value)) list.push(value);
+}
+
+function recordHijackSignals(report, details) {
+  let url;
+  try {
+    url = new URL(details.url);
+  } catch {
+    return;
+  }
+  // O hook do BeEF costuma ser servido como hook.js, em qualquer domínio.
+  if (details.type === "script" && /\/hook\.js$/i.test(url.pathname)) {
+    addUnique(report.hijack.beef, `script hook.js de ${url.hostname}`);
+  }
+  if (!isThirdPartyRequest(report, details.url)) return;
+  if (details.type === "websocket") {
+    report.hijack.websockets[url.hostname] = (report.hijack.websockets[url.hostname] || 0) + 1;
+    return;
+  }
+  if (!POLLING_TYPES.includes(details.type)) return;
+  const key = `${url.origin}${url.pathname}`;
+  const state = reportState(report);
+  const now = Date.now();
+  const times = (state.pollTimes.get(key) || []).filter(time => now - time < POLLING_WINDOW_MS);
+  times.push(now);
+  state.pollTimes.set(key, times);
+  if (times.length < POLLING_MIN_REQUESTS) return;
+  let entry = report.hijack.polling.find(item => item.url === key);
+  if (!entry) {
+    entry = { url: key, tipo: details.type, maximo: 0 };
+    report.hijack.polling.push(entry);
+  }
+  entry.maximo = Math.max(entry.maximo, times.length);
+}
+
+// Só bloqueia terceiros: listar o domínio de um site não quebra o próprio site.
+function shouldBlock(report, details) {
+  if (details.type === "main_frame" || !blocklist.size) return false;
+  if (!blocklist.has(domains.baseDomain(details.url))) return false;
+  return domains.isThirdParty(details.url, report.url || details.documentUrl || details.originUrl || "");
+}
+
 function onBeforeRequest(details) {
-  if (details.tabId < 0) return;
+  if (details.tabId < 0) return undefined;
   let report;
   if (details.type === "main_frame") {
     report = ensurePendingNavigation(details).report;
   } else {
     report = ensureReport(details.tabId, details.frameId === 0 ? details.documentUrl : "");
     recordThirdParty(report, details);
+    recordHijackSignals(report, details);
   }
   // A referência impede respostas atrasadas de contaminarem outra navegação.
   requests.set(details.requestId, { tabId: details.tabId, report });
+  if (!shouldBlock(report, details)) return undefined;
+  report.blockedRequests += 1;
+  const entry = report.thirdParties[domains.hostname(details.url)];
+  if (entry) entry.blocked += 1;
+  return { cancel: true };
 }
 
 function parseCookie(rawCookie, responseUrl, pageUrl, origem) {
@@ -140,6 +213,7 @@ function recordCookie(report, rawCookie, responseUrl, origem) {
   const parsed = parseCookie(rawCookie, responseUrl, report.url, origem);
   if (!parsed) return;
   report.cookies.push(parsed.publicRecord);
+  if (parsed.publicRecord.nome.toUpperCase() === "BEEFHOOK") addUnique(report.hijack.beef, "cookie BEEFHOOK");
   if (parsed.secret.value.length >= 8) reportState(report).cookieSecrets.push(parsed.secret);
   const journey = reportState(report).journey;
   if (!journey || journey.cookieDomains.has(parsed.secret.baseDomain)) return;
@@ -176,6 +250,7 @@ function copyNavigationData(source, target) {
   target.cookies = source.cookies.slice();
   target.cookieSyncs = source.cookieSyncs.slice();
   target.canvasFingerprints = source.canvasFingerprints.slice();
+  target.hijack.beef = source.hijack.beef.slice();
   const sourceState = reportState(source);
   const targetState = reportState(target);
   targetState.cookieSecrets = sourceState.cookieSecrets.slice();
@@ -256,6 +331,33 @@ function detectBounces(journey) {
   return bounces;
 }
 
+// A página de bounce redireciona logo depois de gravar o cookie, e a mensagem
+// jsCookie pode morrer junto com ela. Por isso consultamos o navegador direto:
+// se o domínio intermediário tem cookie (gravado agora ou numa visita anterior,
+// e portanto reenviado na passagem), a gravidade é "maior".
+async function checkBounceCookies(tabId, report, journey) {
+  const pendingDomains = report.bounces.filter(bounce => !bounce.enviouCookie).map(b => b.dominio);
+  if (!pendingDomains.length) return;
+  let storeId;
+  try {
+    storeId = (await browser.tabs.get(tabId)).cookieStoreId;
+  } catch {
+    return;
+  }
+  for (const domain of pendingDomains) {
+    try {
+      const found = await browser.cookies.getAll({ domain, storeId });
+      if (found.length) journey.cookieDomains.add(domain);
+    } catch {
+      // Sem acesso ao armazenamento de cookies: mantém a gravidade calculada.
+    }
+  }
+  if (reports.get(tabId) !== report) return;
+  report.bounces = detectBounces(journey);
+  console.debug("[bounce] cookies no navegador, aba", tabId, "store:", storeId,
+    "cookies:", [...journey.cookieDomains], "bounces:", report.bounces);
+}
+
 function onCommitted(details) {
   if (details.frameId !== 0) {
     const report = reports.get(details.tabId);
@@ -282,6 +384,8 @@ function onCommitted(details) {
   navigationJourneys.set(details.tabId, journey);
   reports.set(details.tabId, report);
   pendingNavigations.delete(details.tabId);
+  updateBadge(details.tabId);
+  if (report.bounces.length) void checkBounceCookies(details.tabId, report, journey);
 }
 
 function finishRequest(details) {
@@ -350,8 +454,27 @@ function onMessage(message, sender) {
     recordCookie(report, message.cookie, sender.url, "js");
   } else if (message.type === "canvasCall") {
     recordCanvasCall(report, frame, message);
+  } else if (message.type === "hookReport") {
+    frame.hooks = sanitizeHookReport(message);
   }
   return undefined;
+}
+
+// A mensagem vem de um content script, mas o conteúdo descreve a página: limita tudo.
+function sanitizeHookReport(message) {
+  const names = value => (Array.isArray(value) ? value : [])
+    .filter(item => typeof item === "string").slice(0, 50).map(item => item.slice(0, 80));
+  return {
+    overridden: names(message.overridden).slice(0, 20),
+    newGlobals: names(message.newGlobals),
+    newGlobalsTotal: Number.isInteger(message.newGlobalsTotal) ? message.newGlobalsTotal : 0,
+    beefGlobal: message.beefGlobal === true,
+    beefCookie: message.beefCookie === true
+  };
+}
+
+function setBlocklist(list) {
+  blocklist = new Set(Array.isArray(list) ? list.filter(item => typeof item === "string") : []);
 }
 
 async function loadTrackers() {
@@ -365,13 +488,14 @@ async function loadTrackers() {
       for (const entry of Object.values(report.thirdParties)) {
         entry.knownTracker = domains.isTracker(entry.domain, trackerDomains);
       }
+      updateBadge(report.tabId);
     }
   } catch {
     trackerStatus = "error";
   }
 }
 
-browser.webRequest.onBeforeRequest.addListener(onBeforeRequest, { urls: ["<all_urls>"] });
+browser.webRequest.onBeforeRequest.addListener(onBeforeRequest, { urls: ["<all_urls>"] }, ["blocking"]);
 browser.webRequest.onHeadersReceived.addListener(onHeadersReceived, { urls: ["<all_urls>"] }, ["responseHeaders"]);
 browser.webRequest.onBeforeRedirect.addListener(onBeforeRedirect, { urls: ["<all_urls>"], types: ["main_frame"] });
 browser.webRequest.onCompleted.addListener(finishRequest, { urls: ["<all_urls>"] });
@@ -385,4 +509,9 @@ browser.tabs.onRemoved.addListener(tabId => {
   replacedReports.delete(tabId);
   for (const [id, request] of requests) if (request.tabId === tabId) requests.delete(id);
 });
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.blocklist) setBlocklist(changes.blocklist.newValue);
+});
+browser.storage.local.get("blocklist").then(data => setBlocklist(data.blocklist), () => {});
+Promise.resolve(browser.browserAction.setBadgeBackgroundColor({ color: "#96301d" })).catch(() => {});
 loadTrackers();

@@ -99,12 +99,91 @@
   function installPageHooks() {
     try {
       const page = window.wrappedJSObject;
+      captureGlobalState(page);
       installIndexedDBHooks(page);
       installCanvasHooks(page);
       installCookieHook(page);
     } catch {
       hooksAvailable = false;
     }
+  }
+
+  // APIs que scripts de hijacking/hook costumam substituir para interceptar dados.
+  // Nenhuma delas é alterada por esta extensão.
+  const WATCHED_APIS = [
+    ["fetch", page => page.fetch],
+    ["XMLHttpRequest.prototype.open", page => page.XMLHttpRequest.prototype.open],
+    ["XMLHttpRequest.prototype.send", page => page.XMLHttpRequest.prototype.send],
+    ["WebSocket", page => page.WebSocket],
+    ["EventTarget.prototype.addEventListener", page => page.EventTarget.prototype.addEventListener],
+    ["document.write", page => page.document.write],
+    ["navigator.sendBeacon", page => page.navigator.sendBeacon],
+    ["window.open", page => page.open]
+  ];
+  const nativeToString = Function.prototype.toString;
+  let originalApis = [];
+  let originalGlobals = new Set();
+
+  function readApi(read, page) {
+    try {
+      return read(page);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function captureGlobalState(page) {
+    // Em document_start nenhum script da página rodou ainda: estas são as nativas.
+    originalApis = WATCHED_APIS.map(([name, read]) => [name, read, readApi(read, page)]);
+    try {
+      originalGlobals = new Set(Object.keys(page));
+    } catch {
+      originalGlobals = new Set();
+    }
+  }
+
+  function isNativeCode(value) {
+    try {
+      return /\{\s*\[native code\]\s*\}\s*$/.test(Reflect.apply(nativeToString, value, []));
+    } catch {
+      return false;
+    }
+  }
+
+  function inspectGlobalState() {
+    let page;
+    try {
+      page = window.wrappedJSObject;
+    } catch {
+      return;
+    }
+    const overridden = [];
+    for (const [name, read, original] of originalApis) {
+      if (original === undefined) continue;
+      const current = readApi(read, page);
+      if (current === original) continue;
+      // Uma referência nova para a mesma função nativa não é substituição.
+      if (typeof current === "function" && isNativeCode(current)) continue;
+      overridden.push(name);
+    }
+    let keys = [];
+    try {
+      keys = Object.keys(page);
+    } catch {
+      // Sem acesso às globais deste documento.
+    }
+    const newGlobals = keys.filter(key => !originalGlobals.has(key) && !/^\d+$/.test(key));
+    let beefCookie = false;
+    try {
+      beefCookie = /(?:^|;\s*)BEEFHOOK=/i.test(document.cookie);
+    } catch {
+      // Documentos sandboxed não expõem cookies.
+    }
+    void sendFrameMessage({
+      type: "hookReport", overridden,
+      newGlobals: newGlobals.slice(0, 50), newGlobalsTotal: newGlobals.length,
+      beefGlobal: newGlobals.includes("beef"), beefCookie
+    });
   }
 
   function storageCount(name) {
@@ -148,6 +227,9 @@
   function onLoad() {
     void takeSnapshot("load");
     setTimeout(() => { void takeSnapshot("after3s"); }, 3000);
+    // 2 s cobre scripts do load; 10 s pega carregadores tardios, como o GTM.
+    setTimeout(inspectGlobalState, 2000);
+    setTimeout(inspectGlobalState, 10000);
   }
 
   installPageHooks();

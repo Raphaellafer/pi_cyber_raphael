@@ -5,23 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Análise de Raphael</title>
   <link rel="stylesheet" href="popup.css">
+  <script src="../lib/domains.js" defer></script>
+  <script src="../lib/score.js" defer></script>
   <script src="popup.js" defer></script>
 </head>
 <body>
-  <header><img src="../icons/icon-48.png" width="32" height="32" alt=""><div><h1>Análise de Raphael</h1><p>Observação de privacidade · Conceito B</p></div></header>
+  <header><img src="../icons/icon-48.png" width="32" height="32" alt=""><div><h1>Análise de Raphael</h1><p>Observação de privacidade · Conceito A</p></div></header>
   <p id="page" class="page">Carregando aba…</p>
   <p id="status" role="status"></p>
   <div class="summary">
     <div><strong id="third-count">0</strong><span>domínios terceiros</span></div>
     <div><strong id="tracker-count">0</strong><span>rastreadores conhecidos</span></div>
     <div><strong id="cookie-count">0</strong><span>cookies observados</span></div>
+    <div><strong id="score-summary">—</strong><span>score de privacidade</span></div>
   </div>
-  <section aria-labelledby="third-title">
+  <nav class="tabs" role="tablist" aria-label="Seções do relatório">
+    <button type="button" role="tab" data-tab="trackers" aria-selected="true">Rastreadores</button>
+    <button type="button" role="tab" data-tab="cookies" aria-selected="false">Cookies</button>
+    <button type="button" role="tab" data-tab="storage" aria-selected="false">Storage</button>
+    <button type="button" role="tab" data-tab="alerts" aria-selected="false">Alertas <span id="alert-count"></span></button>
+    <button type="button" role="tab" data-tab="score" aria-selected="false">Score</button>
+    <button type="button" role="tab" data-tab="blocklist" aria-selected="false">Minha lista</button>
+  </nav>
+  <section id="tab-trackers" role="tabpanel" aria-labelledby="third-title">
     <h2 id="third-title">Terceiros</h2>
+    <p>“Bloquear” adiciona o domínio base à sua lista; bloqueios valem só quando ele é terceiro.</p>
     <p id="third-empty">Nenhuma requisição de terceiro observada.</p>
-    <table id="third-table" hidden><thead><tr><th>Domínio / tipos</th><th>Requisições</th><th>Rastreador</th></tr></thead><tbody id="third-body"></tbody></table>
+    <table id="third-table" hidden><thead><tr><th>Domínio / tipos</th><th>Req.</th><th>Rastreador</th><th>Ação</th></tr></thead><tbody id="third-body"></tbody></table>
   </section>
-  <section aria-labelledby="cookie-title">
+  <section id="tab-cookies" role="tabpanel" aria-labelledby="cookie-title" hidden>
     <h2 id="cookie-title">Cookies</h2>
     <div class="cookie-summary">
       <div><strong id="first-session">0</strong><span>1ª sessão</span></div>
@@ -32,18 +44,42 @@
     <p id="cookie-empty">Nenhum cookie observado.</p>
     <table id="cookie-table" hidden><thead><tr><th>Nome</th><th>Domínio</th><th>Parte</th><th>Tipo</th><th>Origem</th></tr></thead><tbody id="cookie-body"></tbody></table>
   </section>
-  <section aria-labelledby="storage-title">
+  <section id="tab-storage" role="tabpanel" aria-labelledby="storage-title" hidden>
     <h2 id="storage-title">Storage HTML5</h2>
     <p>Itens e bancos por frame no load e 3 s depois. “—” significa indisponível ou não suportado.</p>
     <p id="storage-empty">Aguardando medições. Recarregue a página e espere 3 segundos.</p>
     <div id="storage-frames"></div>
   </section>
-  <section aria-labelledby="alert-title">
+  <section id="tab-alerts" role="tabpanel" aria-labelledby="alert-title" hidden>
     <h2 id="alert-title">Alertas</h2>
     <div class="alert-group"><h3>Canvas fingerprint</h3><ul id="canvas-alerts"></ul></div>
     <div class="alert-group"><h3>Bounce tracking</h3><ul id="bounce-alerts"></ul></div>
     <div class="alert-group"><h3>Cookie sync</h3><ul id="sync-alerts"></ul></div>
     <div class="alert-group"><h3>Parâmetros de rastreio</h3><ul id="parameter-alerts"></ul></div>
+    <div class="alert-group"><h3>Hijacking / hook</h3><ul id="hijack-alerts"></ul></div>
+    <details class="alert-group">
+      <summary>Globais criadas pela página no frame principal (informativo)</summary>
+      <p id="globals-text">Aguardando inspeção (2 s após o load).</p>
+    </details>
+  </section>
+  <section id="tab-score" role="tabpanel" aria-labelledby="score-title" hidden>
+    <h2 id="score-title">Score de privacidade</h2>
+    <p class="score-line"><strong id="score-value">—</strong><span id="score-grade"></span></p>
+    <p>score = 100 − Σ min(peso × ocorrências, teto). A 85–100 · B 70–84 · C 50–69 · D 30–49 · F 0–29.</p>
+    <table><thead><tr><th>Critério</th><th>Ocorr.</th><th>Penalidade</th></tr></thead><tbody id="score-body"></tbody></table>
+    <p>Metodologia completa em docs/metodologia-score.md.</p>
+  </section>
+  <section id="tab-blocklist" role="tabpanel" aria-labelledby="blocklist-title" hidden>
+    <h2 id="blocklist-title">Minha lista de bloqueio</h2>
+    <p>Requisições bloqueadas nesta aba: <strong id="blocked-count">0</strong>. Páginas principais nunca são bloqueadas.</p>
+    <form id="blocklist-form">
+      <label for="blocklist-input">Domínio</label>
+      <input id="blocklist-input" type="text" placeholder="ex.: doubleclick.net" autocomplete="off" spellcheck="false">
+      <button type="submit">Adicionar</button>
+    </form>
+    <p id="blocklist-error" role="alert"></p>
+    <p id="blocklist-empty">Nenhum domínio na lista.</p>
+    <ul id="blocklist-items"></ul>
   </section>
   <footer>Cookies via header podem ser rejeitados pelo navegador. Valores nunca aparecem no popup.<button id="refresh" type="button">Atualizar</button></footer>
 </body>

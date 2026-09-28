@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Análise de Raphael",
-  "version": "0.1.0",
-  "description": "Observa terceiros, cookies recebidos e storage HTML5 por aba.",
+  "version": "0.3.0",
+  "description": "Observa terceiros, cookies, storage HTML5, fingerprint e hijacking por aba, com score de privacidade e lista de bloqueio.",
   "permissions": ["webRequest", "webRequestBlocking", "cookies", "tabs", "storage", "webNavigation", "<all_urls>"],
   "background": {
     "scripts": ["lib/domains.js", "background.js"]
