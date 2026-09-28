@@ -112,6 +112,9 @@ Os relatórios ficam somente na memória do processo de background e são elimin
 - `lib/trackers.json`: domínios derivados da Disconnect;
 - `popup/`: interface do relatório;
 - `docs/metodologia-score.md`: critérios, pesos, tetos e limitações do score;
+- `docs/relatorio.md` e `docs/relatorio.pdf`: relatório da avaliação (testes do DuckDuckGo, sites reais e score);
+- `tools/analisar_har.py`: resume um HAR em Markdown com a mesma regra de domínio e a mesma lista do plugin (`python tools/analisar_har.py <arquivo.har> <url>`);
+- `tools/gerar_pdf.py`: gera o PDF do relatório com as imagens embutidas (requer `pip install markdown` e Chrome ou Edge);
 - `icons/`: ícone da extensão;
 - `evidencias/`: reservado para as evidências da avaliação.
 
